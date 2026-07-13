@@ -1,6 +1,6 @@
 {
   lib,
-  makeSetupHook,
+  lld,
   stdenv,
   swiftc,
 }:
@@ -8,6 +8,8 @@
 let
   swiftPlatform = stdenv.hostPlatform.swift.platform;
   libraryExtension = stdenv.hostPlatform.extensions.library;
+
+  toolLTO = lib.cmakeFeature "SWIFT_TOOLS_ENABLE_LTO" "thin";
 in
 (swiftc.override {
   stdlib = null;
@@ -28,6 +30,12 @@ in
       "dev"
     ];
 
+    cmakeFlags =
+      # Only enable LTO for the stdlib. Remove it if it’s enabled for the tools.
+      (lib.filter (flag: flag != toolLTO) (old.cmakeFlags or [ ]))
+      # LTO is slow (and pointless due to using system libraries) on Darwin, so only enable it for other platforms.
+      ++ lib.optionals (!stdenv.hostPlatform.isDarwin) [ (lib.cmakeFeature "SWIFT_STDLIB_ENABLE_LTO" "thin") ];
+
     postInstall = ''
       moveToOutput "lib/swift/${swiftPlatform}" "''${!outputLib}"
 
@@ -43,7 +51,7 @@ in
       mv -v "''${!outputLib}/lib/swift/${swiftPlatform}"/*${libraryExtension} "''${!outputLib}/lib"
 
       # Install C++ interop libraries and headers
-      cp -v lib/swift/${swiftPlatform}/libswiftCxx*.a "''${!outputDev}/lib"
+      cp -v lib/swift/${swiftPlatform}/libswiftCxx*${stdenv.hostPlatform.extensions.staticLibrary} "''${!outputDev}/lib"
       cp -rv lib/swift/${swiftPlatform}/Cxx*.swiftmodule "''${!outputDev}/lib/swift/${swiftPlatform}"
 
       mkdir -p "''${!outputDev}/include/swiftToCxx"
