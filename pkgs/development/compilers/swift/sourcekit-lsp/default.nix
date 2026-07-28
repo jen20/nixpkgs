@@ -2,7 +2,6 @@
   lib,
   stdenv,
   callPackage,
-  fetchpatch,
   pkg-config,
   swift,
   swiftpm,
@@ -48,22 +47,23 @@ stdenv.mkDerivation {
   configurePhase = generated.configure + ''
     swiftpmMakeMutable indexstore-db
     patch -p1 -d .build/checkouts/indexstore-db -i ${./patches/indexstore-db-macos-target.patch}
-    patch -p1 -d .build/checkouts/indexstore-db -i ${
-      # Fix the build with modern Clang.
-      fetchpatch {
-        url = "https://github.com/swiftlang/indexstore-db/commit/6120b53b1e8774ef4e2ad83438d4d94961331e72.patch";
-        hash = "sha256-tMAfTIa3RKiA/jDtP02mHcpPaF2s9a+3q/PLJxqn30M=";
-      }
-    }
 
-    # This toggles a section specific to Xcode XCTest, which doesn't work on
-    # Darwin, where we also use swift-corelibs-xctest.
-    substituteInPlace Sources/LSPTestSupport/PerfTestCase.swift \
-      --replace-fail '#if os(macOS)' '#if false'
+    # `OSSignposter` and `OSSignpostID` are not `Sendable` in the SDK this
+    # toolchain pins, and `QueueBasedMessageHandler` captures them in
+    # `@Sendable` closures. Same package, same fix as swiftpm's build of it.
+    swiftpmMakeMutable swift-tools-protocols
+    patch -p1 -d .build/checkouts/swift-tools-protocols \
+      -i ${../swiftpm/patches/tools-protocols-signposter-sendable.patch}
 
     # Required to link with swift-corelibs-xctest on Darwin.
-    export SWIFTTSC_MACOS_DEPLOYMENT_TARGET=10.12
+    export SWIFTTSC_MACOS_DEPLOYMENT_TARGET=10.15
   '';
+
+  # Build only what `installPhase` installs. A bare `swift-build` also builds
+  # `SKTestSupport`, which exists for sourcekit-lsp's own test suite (we do not
+  # run it) and which does `import Testing` — satisfying that would mean
+  # dragging swift-testing and its macro plugin into this build for no output.
+  swiftpmFlags = [ "--product sourcekit-lsp" ];
 
   # TODO: BuildServerBuildSystemTests fails
   #doCheck = true;

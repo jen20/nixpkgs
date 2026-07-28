@@ -2,7 +2,6 @@
   lib,
   stdenv,
   callPackage,
-  fetchpatch,
   swift,
   swiftpm,
   swiftpm2nix,
@@ -45,12 +44,14 @@ stdenv.mkDerivation {
     (replaceVars ./patches/linux-fix-linking.patch {
       inherit clang;
     })
-    # TODO: Replace with branch patch once merged:
-    # https://github.com/apple/swift-driver/pull/1197
-    (fetchpatch {
-      url = "https://github.com/apple/swift-driver/commit/d3ef9cdf4871a58eddec7ff0e28fe611130da3f9.patch";
-      hash = "sha256-eVBaKN6uzj48ZnHtwGV0k5ChKjak1tDCyE+wTdyGq2c=";
-    })
+    # Our wrappers pass injected flags through a response file created with a
+    # process substitution, which swift-driver cannot read. Supersedes the
+    # still-unmerged https://github.com/swiftlang/swift-driver/pull/1197,
+    # which fixes only half of it.
+    ./patches/response-file-special-files.patch
+    # swift-driver is its own derivation here, so it cannot find the compiler's
+    # plugins by looking next to itself.
+    ./patches/toolchain-root-from-frontend.patch
     # Prevent a warning about SDK directories we don't have.
     (replaceVars ./patches/prevent-sdk-dirs-warnings.patch {
       inherit (builtins) storeDir;

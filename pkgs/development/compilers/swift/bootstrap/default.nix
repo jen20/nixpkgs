@@ -13,6 +13,8 @@
   bintools,
   python312Packages,
   git,
+  fetchpatch,
+  fetchpatch2,
   makeWrapper,
   gnumake,
   file,
@@ -34,13 +36,12 @@
   sigtool,
   DarwinTools,
   autoSignDarwinBinariesHook,
-  swiftBootstrap,
   apple-sdk_14,
   darwinMinVersionHook,
 }:
 
 let
-  apple-sdk_swift = apple-sdk_14; # Must stay parseable by the 5.10 bootstrap compiler: newer SDKs ship Swift 6 .swiftinterface files (typed throws).
+  apple-sdk_swift = apple-sdk_14; # Use the SDK that was available when Swift shipped.
 
   deploymentVersion =
     if lib.versionOlder (targetPlatform.darwinMinVersion or "0") "10.15" then
@@ -48,16 +49,12 @@ let
     else
       targetPlatform.darwinMinVersion;
 
-  # Pinned to 3.12 for LLDB's Python bindings. Newer versions are untested here.
+  # Use Python 3.12 for now because Swift 5.8 depends on Python's PyEval_ThreadsInitialized(), which was removed in 3.13.
   python3 = python312Packages.python.withPackages (p: [ p.setuptools ]); # python 3.12 compat.
 
   inherit (stdenv) hostPlatform targetPlatform;
 
-  sources = callPackage ../sources.nix { };
-
-  # Major version of the Clang bundled in Swift's llvm-project fork, which
-  # determines the name of its resource directory (`lib/clang/<major>`).
-  clangVersion = "21";
+  sources = callPackage ./sources.nix { };
 
   # There are apparently multiple naming conventions on Darwin. Swift uses the
   # xcrun naming convention. See `configure_sdk_darwin` calls in CMake files.
@@ -100,13 +97,6 @@ let
   swiftInstallComponents = [
     "autolink-driver"
     "compiler"
-    # New in Swift 6: `swift-frontend` is partly written in Swift and links the
-    # swift-syntax libraries out of `lib/swift/host/compiler` via an rpath, so
-    # they have to be installed or the compiler cannot start. `swift-syntax-lib`
-    # installs the copies under `lib/swift/host` that the macro plugins and
-    # `swift-plugin-server` load.
-    "compiler-swift-syntax-lib"
-    "swift-syntax-lib"
     # "clang-builtin-headers"
     "stdlib"
     "sdk-overlay"
@@ -205,6 +195,30 @@ let
     chmod a+x "$targetFile"
   '';
 
+  # On Darwin, we need to use BOOTSTRAPPING-WITH-HOSTLIBS because of ABI
+  # stability, and have to provide the definitions for the system stdlib.
+  appleSwiftCore = stdenv.mkDerivation {
+    name = "apple-swift-core";
+    dontUnpack = true;
+
+    buildInputs = [ apple-sdk_swift ];
+
+    installPhase = ''
+      mkdir -p $out/lib/swift
+      cp -r \
+        "$SDKROOT/usr/lib/swift/Swift.swiftmodule" \
+        "$SDKROOT/usr/lib/swift/CoreFoundation.swiftmodule" \
+        "$SDKROOT/usr/lib/swift/Dispatch.swiftmodule" \
+        "$SDKROOT/usr/lib/swift/ObjectiveC.swiftmodule" \
+        "$SDKROOT/usr/lib/swift/libswiftCore.tbd" \
+        "$SDKROOT/usr/lib/swift/libswiftCoreFoundation.tbd" \
+        "$SDKROOT/usr/lib/swift/libswiftDispatch.tbd" \
+        "$SDKROOT/usr/lib/swift/libswiftFoundation.tbd" \
+        "$SDKROOT/usr/lib/swift/libswiftObjectiveC.tbd" \
+        $out/lib/swift/
+    '';
+  };
+
   # https://github.com/NixOS/nixpkgs/issues/327836
   # Fail to build with ninja 1.12 when NIX_BUILD_CORES is low (Hydra or Github Actions).
   # Can reproduce using `nix --option cores 2 build -f . swiftPackages.swift-unwrapped`.
@@ -215,7 +229,7 @@ let
 
 in
 stdenv.mkDerivation {
-  pname = "swift";
+  pname = "swift-bootstrap";
   inherit (sources) version;
 
   outputs = [
@@ -243,9 +257,11 @@ stdenv.mkDerivation {
     DarwinTools # sw_vers
     fixDarwinDylibNames
     cctools.libtool
-    # See the matching comment in ../bootstrap/default.nix: `postFixup` rewrites
-    # install names and so invalidates ad-hoc code signatures. This hook runs
-    # from `postFixupHooks`, after `postFixup`, and re-signs them.
+    # `postFixup` rewrites install names, which invalidates the ad-hoc code
+    # signature every arm64 Mach-O carries. That is not a soft failure: the
+    # kernel refuses to map pages whose hashes no longer match and SIGKILLs any
+    # process that loads the library. This hook runs from `postFixupHooks`,
+    # i.e. after `postFixup`, so it re-signs what we rewrote.
     autoSignDarwinBinariesHook
   ];
 
@@ -334,6 +350,8 @@ stdenv.mkDerivation {
         inherit (builtins) storeDir;
       }
     }
+    patch -p1 -d swift -i ${./patches/swift-Frontend-Fix-a-small-unique_ptr-array-access.patch}
+
     # This patch needs to know the lib output location, so must be substituted
     # in the same derivation as the compiler.
     storeDir="${builtins.storeDir}" \
@@ -341,10 +359,55 @@ stdenv.mkDerivation {
     patch -p1 -d swift -i $TMPDIR/swift-separate-lib.patch
 
     patch -p1 -d llvm-project/llvm -i ${./patches/llvm-module-cache.patch}
+    for root in llvm-project/llvm swift/stdlib; do
+      patch -p1 -d $root -i ${
+        (fetchpatch {
+          name = "fix-SmallVector-compile-error.patch";
+          url = "https://github.com/llvm/llvm-project/commit/7e44305041d96b064c197216b931ae3917a34ac1.patch";
+          stripLen = 1;
+          hash = "sha256-1htuzsaPHbYgravGc1vrR8sqpQ/NSQ8PUZeAU8ucCFk=";
+        })
+      }
+    done
+    patch -p2 -d llvm-project/llvm -i ${./patches/llvm-fix-X86MCTargetDesc-compile-error.patch}
+
+    for lldbPatch in ${
+      lib.escapeShellArgs [
+        # Fix the build with modern libc++.
+        (fetchpatch {
+          name = "add-cstdio.patch";
+          url = "https://github.com/llvm/llvm-project/commit/73e15b5edb4fa4a77e68c299a6e3b21e610d351f.patch";
+          stripLen = 1;
+          hash = "sha256-eFcvxZaAuBsY/bda1h9212QevrXyvCHw8Cr9ngetDr0=";
+        })
+        (fetchpatch {
+          url = "https://github.com/llvm/llvm-project/commit/68744ffbdd7daac41da274eef9ac0d191e11c16d.patch";
+          stripLen = 1;
+          hash = "sha256-QCGhsL/mi7610ZNb5SqxjRGjwJeK2rwtsFVGeG3PUGc=";
+        })
+        (fetchpatch {
+          name = "LLDB-Add-cstdint-to-AddressableBits-102110.patch";
+          url = "https://github.com/llvm/llvm-project/commit/bb59f04e7e75dcbe39f1bf952304a157f0035314.patch";
+          stripLen = 1;
+          hash = "sha256-+CcmZRxCaozFe1Kuf2HX+kGKuh/PDuoFBEFA/t7tL9A=";
+        })
+      ]
+    }; do
+      patch -p1 -d llvm-project/lldb -i $lldbPatch
+    done
 
     patch -p1 -d llvm-project/clang -i ${./patches/clang-toolchain-dir.patch}
     patch -p1 -d llvm-project/clang -i ${./patches/clang-wrap.patch}
     patch -p1 -d llvm-project/clang -i ${./patches/clang-purity.patch}
+
+    patch -p1 -d llvm-project/cmake -i ${
+      fetchpatch2 {
+        name = "cmake-fix.patch";
+        url = "https://github.com/llvm/llvm-project/commit/3676a86a4322e8c2b9c541f057b5d3704146b8f3.patch?full_index=1";
+        stripLen = 1;
+        hash = "sha256-zP9dQOmWs7qrxkBRj70DyQBbRjH78B6tNJVy6ilA1xM=";
+      }
+    }
 
     ${lib.optionalString stdenv.hostPlatform.isLinux ''
       substituteInPlace llvm-project/clang/lib/Driver/ToolChains/Linux.cpp \
@@ -382,6 +445,23 @@ stdenv.mkDerivation {
     rm swift/test/AutoDiff/compiler_crashers_fixed/issue-56649-missing-debug-scopes-in-pullback-trampoline.swift
 
     patchShebangs .
+
+    ${lib.optionalString (!stdenv.hostPlatform.isDarwin) ''
+      patch -p1 -d swift-corelibs-libdispatch -i ${
+        # Fix the build with modern Clang.
+        fetchpatch {
+          url = "https://github.com/swiftlang/swift-corelibs-libdispatch/commit/30bb8019ba79cdae0eb1dc0c967c17996dd5cc0a.patch";
+          hash = "sha256-wPZQ4wtEWk8HaKMfzjamlU6p/IW5EFiTssY63rGM+ZA=";
+        }
+      }
+      patch -p1 -d swift-corelibs-libdispatch -i ${
+        # Fix the build with modern Clang.
+        fetchpatch {
+          url = "https://github.com/swiftlang/swift-corelibs-libdispatch/commit/38872e2d44d66d2fb94186988509defc734888a5.patch";
+          hash = "sha256-GABwDeTjciV36Sa0FS10mCfFCqRoBBstgW/OiKdPahA=";
+        }
+      }
+    ''}
   '';
 
   # > clang-15-unwrapped: error: unsupported option '-fzero-call-used-regs=used-gpr' for target 'arm64-apple-macosx10.9.0'
@@ -439,7 +519,6 @@ stdenv.mkDerivation {
         -GNinja
         -DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi
         -DLIBCXXABI_INSTALL_INCLUDE_DIR=$dev/include/c++/v1
-        -DLIBCXXABI_USE_LLVM_UNWINDER=OFF
       "
       ninjaFlags="install-cxx-headers install-cxxabi-headers"
       buildProject libcxx llvm-project/runtimes
@@ -466,59 +545,35 @@ stdenv.mkDerivation {
 
     # Ensure that the built Clang can find the runtime libraries by
     # copying the symlinks from the main wrapper.
-    cp -P ${clang}/resource-root/{lib,share} $SWIFT_BUILD_ROOT/llvm/lib/clang/${clangVersion}/
+    cp -P ${clang}/resource-root/{lib,share} $SWIFT_BUILD_ROOT/llvm/lib/clang/16.0.0/
 
-    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
-      # cc-wrapper adds -Werror=unguarded-availability whenever a Darwin minimum
-      # version is set (add-clang-cc-cflags-before.sh). The back-deployment
-      # compatibility libraries are deliberately compiled for macOS 10.9, so they
-      # reference APIs introduced later (os_unfair_lock in 10.12) and would fail
-      # that check. Demote it to a warning for the Swift build, as we do for the
-      # 5.10 bootstrap. `add-flags.sh` folds this unsalted variable into the
-      # salted one it actually reads, so setting it here is enough.
-      export NIX_CFLAGS_COMPILE+=" -Wno-error=unguarded-availability"
-    ''}
+  ''
+  + lib.optionalString stdenv.hostPlatform.isDarwin ''
+    # Add appleSwiftCore to the search paths. Adding the whole SDK results in build failures.
+    OLD_NIX_SWIFTFLAGS_COMPILE="$NIX_SWIFTFLAGS_COMPILE"
+    OLD_NIX_LDFLAGS="$NIX_LDFLAGS"
+    OLD_NIX_CFLAGS_COMPILE="$NIX_CFLAGS_COMPILE"
+    export NIX_SWIFTFLAGS_COMPILE=" -I ${appleSwiftCore}/lib/swift"
+    export NIX_LDFLAGS+=" -L ${appleSwiftCore}/lib/swift"
+    export NIX_CFLAGS_COMPILE+=" -Wno-error=unguarded-availability"
+  ''
+  + ''
 
-    # Since Swift 6, the compiler and even the standard library are partly
-    # written in Swift: the stdlib uses macros, which are expanded by
-    # swift-syntax, which is itself written in Swift. There is therefore no way
-    # to build this from C++ alone, so we build it with `swiftBootstrap`
-    # (Swift 5.10, the last release whose stdlib still bootstraps from C++) as
-    # the host toolchain.
-    #
-    # Some notes on the flags:
+    # Some notes:
+    # - BOOTSTRAPPING_MODE defaults to OFF in CMake, but is enabled in standard
+    #   builds, so we enable it as well. On Darwin, we have to use the system
+    #   Swift libs because of ABI-stability, but this may be trouble if the
+    #   builder is an older macOS.
     # - Experimental features are OFF by default in CMake, but are enabled in
     #   official builds, so we do the same. (Concurrency is also required in
     #   the stdlib. StringProcessing is often implicitely imported, causing
-    #   lots of warnings if missing.) The authoritative list of what a real
-    #   toolchain ships is `utils/build_swift/tests/expected_options.py`, which
-    #   records the build-script defaults; the bare CMake options all default to
-    #   FALSE and are overridden there. Synchronization in particular is not
-    #   optional in practice — `Mutex` and `Atomic` live in it, and swift-build
-    #   imports it.
+    #   lots of warnings if missing.)
     # - SWIFT_STDLIB_ENABLE_OBJC_INTEROP is set explicitely because its check
     #   is buggy. (Uses SWIFT_HOST_VARIANT_SDK before initialized.)
     #   Fixed in: https://github.com/apple/swift/commit/84083afef1de5931904d5c815d53856cdb3fb232
-    # - The back-deployment compatibility libraries are built for macOS 10.9
-    #   (COMPATIBILITY_MINIMUM_DEPLOYMENT_VERSION_OSX), so they trip
-    #   `-Werror=unguarded-availability` on things like `os_unfair_lock`, which
-    #   is guarded on 10.12+. cc-wrapper adds that -Werror whenever a Darwin
-    #   minimum version is set, so we turn it back into a warning below. These
-    #   libraries are not optional: the compiler emits autolink directives for
-    #   `swiftCompatibility56`, `swiftCompatibilityConcurrency` and
-    #   `swiftCompatibilityPacks` for any deployment target below their
-    #   cut-offs, and nixpkgs targets macOS 11.0 on aarch64, so without them
-    #   *every* link fails with undefined `__swift_FORCE_LOAD_$_swiftCompatibility*`.
-    # - The Embedded Swift stdlib is built for a whole set of target triples
-    #   (x86_64, arm64e, ...), but we only build the LLVM backend for the host
-    #   architecture, so those cross-targets abort with "No available targets
-    #   are compatible with triple". Embedded Swift targets bare-metal systems
-    #   and is not useful in a general-purpose toolchain.
     cmakeFlags="
       -GNinja
-      -DBOOTSTRAPPING_MODE=HOSTTOOLS
-      -DCMAKE_Swift_COMPILER=${swiftBootstrap}/bin/swiftc
-      -DSWIFT_BUILD_SWIFT_SYNTAX=ON
+      -DBOOTSTRAPPING_MODE=BOOTSTRAPPING${lib.optionalString stdenv.hostPlatform.isDarwin "-WITH-HOSTLIBS"}
       -DSWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=ON
       -DSWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY=ON
       -DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP=ON
@@ -526,9 +581,6 @@ stdenv.mkDerivation {
       -DSWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING=ON
       -DSWIFT_ENABLE_BACKTRACING=ON
       -DSWIFT_ENABLE_EXPERIMENTAL_OBSERVATION=ON
-      -DSWIFT_ENABLE_SYNCHRONIZATION=ON
-      -DSWIFT_ENABLE_VOLATILE=ON
-      -DSWIFT_ENABLE_RUNTIME_MODULE=ON
       -DLLVM_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/llvm
       -DClang_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/clang
       -DSWIFT_PATH_TO_CMARK_SOURCE=$SWIFT_SOURCE_ROOT/swift-cmark
@@ -539,74 +591,18 @@ stdenv.mkDerivation {
       -DSWIFT_INSTALL_COMPONENTS=${lib.concatStringsSep ";" swiftInstallComponents}
       -DSWIFT_STDLIB_ENABLE_OBJC_INTEROP=${if stdenv.hostPlatform.isDarwin then "ON" else "OFF"}
       -DSWIFT_DARWIN_DEPLOYMENT_VERSION_OSX=${deploymentVersion}
-      -DSWIFT_SHOULD_BUILD_EMBEDDED_STDLIB=OFF
     "
-    # swift-syntax is pulled in with `FetchContent`, so its targets are excluded
-    # from `all` and only those `swift-frontend` actually links get built. The
-    # `swift-syntax-lib` and `compiler-swift-syntax-lib` install components are
-    # wider than that, so a plain `ninja` leaves a few of their members behind
-    # and the install phase then dies on the first one it cannot find
-    # ("file INSTALL cannot find .../libSwiftIDEUtils.dylib"). Ask for the
-    # component targets explicitly. `SwiftIDEUtils` and `SwiftRefactor` (the
-    # "Support for LSP" pair) are the ones nothing else pulls in;
-    # `_Compiler_SwiftLibraryPluginProviderCShims` is installed by the component
-    # but is missing from its `add_dependencies`, so it needs naming separately.
-    ninjaFlags="all swift-syntax-lib compiler-swift-syntax-lib _Compiler_SwiftLibraryPluginProviderCShims"
     buildProject swift
-    unset ninjaFlags
 
-    # These are based on flags in `utils/build-script-impl`.
-    #
-    # LLDB_USE_SYSTEM_DEBUGSERVER=ON disables the debugserver build on Darwin,
-    # which requires a special signature.
-    #
-    # CMAKE_BUILD_WITH_INSTALL_NAME_DIR ensures we don't use rpath on Darwin.
-    cmakeFlags="
-      -GNinja
-      -DLLDB_SWIFTC=$SWIFT_BUILD_ROOT/swift/bin/swiftc
-      -DLLDB_SWIFT_LIBS=$SWIFT_BUILD_ROOT/swift/lib/swift
-      -DLLVM_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/llvm
-      -DClang_DIR=$SWIFT_BUILD_ROOT/llvm/lib/cmake/clang
-      -DSwift_DIR=$SWIFT_BUILD_ROOT/swift/lib/cmake/swift
-      -DLLDB_ENABLE_CURSES=ON
-      -DLLDB_ENABLE_LIBEDIT=ON
-      -DLLDB_ENABLE_PYTHON=ON
-      -DLLDB_ENABLE_LZMA=OFF
-      -DLLDB_ENABLE_LUA=OFF
-      -DLLDB_INCLUDE_TESTS=OFF
-      -DCMAKE_BUILD_WITH_INSTALL_NAME_DIR=ON
-      ${lib.optionalString stdenv.hostPlatform.isDarwin ''
-        -DLLDB_USE_SYSTEM_DEBUGSERVER=ON
-      ''}
-      -DLibEdit_INCLUDE_DIRS=${lib.getInclude libedit}/include
-      -DLibEdit_LIBRARIES=${lib.getLib libedit}/lib/libedit${stdenv.hostPlatform.extensions.sharedLibrary}
-      -DCURSES_INCLUDE_DIRS=${lib.getInclude ncurses}/include
-      -DCURSES_LIBRARIES=${lib.getLib ncurses}/lib/libncurses${stdenv.hostPlatform.extensions.sharedLibrary}
-      -DPANEL_LIBRARIES=${lib.getLib ncurses}/lib/libpanel${stdenv.hostPlatform.extensions.sharedLibrary}
-    ";
-    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
-      # Since Swift 6, LLDB links the Swift-implemented parts of the compiler
-      # (libswiftASTGen.a, lib_CompilerRegexParser.a, libswiftMacroEvaluation.a).
-      # Those were compiled by the host toolchain, so linking them needs the host
-      # stdlib. `AddLLDB.cmake` adds it for targets that go through its Swift
-      # block, but `lldb-server` does not: its only -L is the swift build's
-      # `lib`, so ~485 stdlib symbols (`_swift_willThrow`,
-      # `_$s11SubSequenceSlTl`, …) come out undefined. It also misses the
-      # `-lobjc` that the same block adds as a workaround for rdar://77839981 —
-      # without it the host `libswiftCore` has an undefined `_objc_opt_self`
-      # "from libobjc" that ld cannot assign a two-level-namespace ordinal to
-      # ("can't find ordinal for imported symbol").
-      #
-      # CMake folds LDFLAGS into CMAKE_{EXE,SHARED,MODULE}_LINKER_FLAGS when it
-      # first configures a build tree, which is also how we avoid putting a
-      # space-containing value through the word-split `cmakeFlags` string above.
-      # The resulting binaries still record `/usr/lib/swift/libswiftCore.dylib`,
-      # exactly as they did before, because that is the host stdlib's install
-      # name — no store path leaks into the link.
-      export LDFLAGS="-L${swiftBootstrap}/lib/swift/macosx -lobjc"
-    ''}
-    buildProject lldb llvm-project/lldb
-    unset LDFLAGS
+  ''
+  + lib.optionalString stdenv.hostPlatform.isDarwin ''
+    # Restore search paths to remove appleSwiftCore.
+    export NIX_SWIFTFLAGS_COMPILE="$OLD_NIX_SWIFTFLAGS_COMPILE"
+    export NIX_LDFLAGS="$OLD_NIX_LDFLAGS"
+    export NIX_CFLAGS_COMPILE="$OLD_NIX_CFLAGS_COMPILE"
+  ''
+  + ''
+
 
   '';
 
@@ -625,7 +621,7 @@ stdenv.mkDerivation {
     # Undo the clang and swift wrapping we did for the build.
     # (This happened via patches to cmake files.)
     cd $SWIFT_BUILD_ROOT
-    mv llvm/bin/clang-${clangVersion}{-unwrapped,}
+    mv llvm/bin/clang-16{-unwrapped,}
     mv swift/bin/swift-frontend{-unwrapped,}
 
     mkdir $lib
@@ -636,10 +632,6 @@ stdenv.mkDerivation {
     installTargets=install-clang
     ninjaInstallPhase
     unset installTargets
-
-    # LLDB is also a private install.
-    cd $SWIFT_BUILD_ROOT/lldb
-    ninjaInstallPhase
 
     cd $SWIFT_BUILD_ROOT/swift
     ninjaInstallPhase
@@ -657,31 +649,7 @@ stdenv.mkDerivation {
 
     # Swift has a separate resource root from Clang, but locates the Clang
     # resource root via subdir or symlink.
-    mv $SWIFT_BUILD_ROOT/llvm/lib/clang/${clangVersion} $lib/lib/swift/clang
-
-    # The swift-syntax modules under `lib/swift/host` are shipped as textual
-    # `.swiftinterface` files, printed by the compiler that built them — for us
-    # the Swift 5.10 bootstrap, because that is the host toolchain under
-    # `BOOTSTRAPPING_MODE=HOSTTOOLS`. Its interface printer drops the primary
-    # associated type from `some Sequence<Expression>`, printing a bare
-    # `some Swift.Sequence`. That loses a same-type requirement, so the generic
-    # signature — and with it the mangled name — of `ListBuilder.buildExpression`
-    # differs from the symbol the shipped dylib actually exports, and anything
-    # compiled against the interface fails to link:
-    #
-    #   Undefined symbols: "_$s26CompilerSwiftSyntaxBuilder04ListD0PAAE15buildExpression…"
-    #
-    # Restore the constraint. These are the only two lossy declarations across
-    # all 14 installed modules (found by grepping every interface for a
-    # `some Swift.{Sequence,Collection,RangeReplaceableCollection}` printed
-    # without its argument), so fix them rather than work around the symptom in
-    # each consumer that builds a macro plugin.
-    for interface in $lib/lib/swift/host/SwiftSyntaxBuilder.swiftmodule/*.swiftinterface; do
-      substituteInPlace "$interface" \
-        --replace-fail \
-          'buildExpression(_ expression: some Swift.Sequence) -> Self.Component' \
-          'buildExpression(_ expression: some Swift.Sequence<Self.Expression>) -> Self.Component'
-    done
+    mv $SWIFT_BUILD_ROOT/llvm/lib/clang/16.0.0 $lib/lib/swift/clang
   '';
 
   preFixup = lib.optionalString stdenv.hostPlatform.isLinux ''
@@ -703,15 +671,7 @@ stdenv.mkDerivation {
     )
 
     for systemLib in "''${!systemLibs[@]}"; do
-      # Since Swift 6 the Darwin overlay comes from the SDK instead of being
-      # built here (there is no `swiftDarwin` target left in
-      # `stdlib/public/Platform/CMakeLists.txt`), so `libswiftDarwin.dylib` is
-      # no longer one of the libraries we install. It stays in `systemLibs`
-      # regardless, because the loop below must still rewrite *references* to
-      # it — swift-frontend and ten of the installed dylibs carry one.
-      if [[ -e $lib/${swiftLibSubdir}/$systemLib ]]; then
-        install_name_tool -id /usr/lib/swift/$systemLib $lib/${swiftLibSubdir}/$systemLib
-      fi
+      install_name_tool -id /usr/lib/swift/$systemLib $lib/${swiftLibSubdir}/$systemLib
     done
 
     for file in $out/bin/swift-frontend $lib/${swiftLibSubdir}/*.dylib; do
@@ -719,59 +679,12 @@ stdenv.mkDerivation {
       for dylib in $(otool -L $file | awk '{ print $1 }'); do
         if [[ ''${systemLibs["$(basename $dylib)"]} ]]; then
           changeArgs+=" -change $dylib /usr/lib/swift/$(basename $dylib)"
-        elif [[ "$dylib" = "$SWIFT_BUILD_ROOT"/* ]]; then
-          # Anything still pointing into the build tree (e.g. picked up from
-          # the bootstrap toolchain) has to be redirected at our own libraries,
-          # since the build tree is gone by the time this runs.
+        elif [[ "$dylib" = */bootstrapping1/* ]]; then
           changeArgs+=" -change $dylib $lib/lib/swift/$(basename $dylib)"
         fi
       done
       if [[ -n "$changeArgs" ]]; then
         install_name_tool $changeArgs $file
-      fi
-    done
-
-    # nixpkgs' CMake setup hook sets CMAKE_INSTALL_NAME_DIR=$lib/lib, so CMake
-    # stamps each installed dylib's install name — and every reference to it —
-    # as "$lib/lib/<name>". That is right for the few libraries that really do
-    # land in $lib/lib, but the host libraries Swift 6 added install into
-    # lib/swift/host, lib/swift/host/compiler and lib/swift/host/plugins. The
-    # result is 199 references, across swift-frontend, swift-plugin-server and
-    # the host dylibs themselves, that point at files which do not exist:
-    #
-    #   dyld: Library not loaded: …/swift-6.3.3-lib/lib/lib_CompilerSwiftIDEUtils.dylib
-    #
-    # so nothing in the toolchain can start. `fixDarwinDylibNames` repairs each
-    # dylib's own id but never rewrites references and skips executables
-    # entirely; and these dylibs carry no LC_RPATH, so pointing the names at
-    # @rpath instead is not an option. Redirect each dangling reference at the
-    # file that actually exists.
-    declare -A hostLibs=()
-    for f in $lib/lib/swift/host/*.dylib $lib/lib/swift/host/*/*.dylib; do
-      [[ -e $f ]] && hostLibs["$(basename $f)"]=$f
-    done
-
-    # The macro plugins are compiled by the host toolchain, so they link its
-    # copies of the non-ABI-stable overlays (`libSwiftMacros.dylib` pulls in
-    # `libswift_StringProcessing.dylib`). Left alone that puts the whole 190 MB
-    # bootstrap compiler in the runtime closure of every package built with
-    # Swift. Point those at our own stdlib instead — the Darwin runtime is ABI
-    # stable, and the plugin has been checked to work against it.
-    bootstrapLib=${lib.getLib swiftBootstrap.swift}
-
-    for file in $out/bin/* $lib/lib/swift/host/*.dylib $lib/lib/swift/host/*/*.dylib; do
-      [[ -f $file ]] || continue
-      changeArgs=""
-      for dylib in $(otool -L "$file" 2>/dev/null | tail -n +2 | awk '{ print $1 }'); do
-        base="$(basename "$dylib")"
-        if [[ "$dylib" == $lib/lib/* && ! -e "$dylib" && -n "''${hostLibs["$base"]:-}" ]]; then
-          changeArgs+=" -change $dylib ''${hostLibs["$base"]}"
-        elif [[ "$dylib" == "$bootstrapLib"/* && -e $lib/${swiftLibSubdir}/$base ]]; then
-          changeArgs+=" -change $dylib $lib/${swiftLibSubdir}/$base"
-        fi
-      done
-      if [[ -n "$changeArgs" ]]; then
-        install_name_tool $changeArgs "$file"
       fi
     done
 
@@ -792,16 +705,12 @@ stdenv.mkDerivation {
       swiftStaticLibSubdir
       ;
 
-    tests = {
-      cxx-interop-test = callPackage ../cxx-interop-test { };
-    };
-
     # Internal attr for the wrapper.
     _wrapperParams = wrapperParams;
   };
 
   meta = {
-    description = "Swift Programming Language";
+    description = "Swift Programming Language (bootstrap compiler used to build Swift 6)";
     homepage = "https://github.com/apple/swift";
     teams = [ lib.teams.swift ];
     license = lib.licenses.asl20;

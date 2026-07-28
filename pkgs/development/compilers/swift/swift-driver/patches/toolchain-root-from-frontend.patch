@@ -1,0 +1,65 @@
+Find compiler plugins relative to the compiler, not to the driver.
+
+swift-driver assumes it is installed in the same `bin` directory as
+`swift-frontend`, and derives the toolchain root — where compiler plugins and
+the in-process plugin server live — from its own executable path. Nixpkgs
+builds swift-driver as its own derivation, so that root points into the
+swift-driver store path, which contains no plugins at all. Every macro then
+fails to expand:
+
+  error: external macro implementation type 'SwiftMacros.TaskLocalMacro' could
+  not be found for macro 'TaskLocal()'; plugin for module 'SwiftMacros' not
+  found
+
+The Swift wrapper already tells the driver where the frontend is, through
+`SWIFT_DRIVER_SWIFT_FRONTEND_EXEC`; use that when it is set. This only changes
+behaviour when the variable is present, so a normal toolchain layout is
+unaffected.
+
+diff --git a/Sources/SwiftDriver/Jobs/FrontendJobHelpers.swift b/Sources/SwiftDriver/Jobs/FrontendJobHelpers.swift
+index a52dad2..f6ac560 100644
+--- a/Sources/SwiftDriver/Jobs/FrontendJobHelpers.swift
++++ b/Sources/SwiftDriver/Jobs/FrontendJobHelpers.swift
+@@ -1026,9 +1026,9 @@ extension Driver {
+   mutating func addPluginPathArguments(commandLine: inout [Job.ArgTemplate], skipMacroSearchPath: Bool) throws {
+     guard isFrontendArgSupported(.pluginPath) else {
+       return
+     }
+-    let pluginPathRoot = VirtualPath.absolute(try toolchain.executableDir.parentDirectory)
++    let pluginPathRoot = VirtualPath.absolute(try toolchain.compilerToolchainRoot)
+ 
+     if isFrontendArgSupported(.inProcessPluginServerPath) {
+       commandLine.appendFlag(.inProcessPluginServerPath)
+ #if os(Windows)
+diff --git a/Sources/SwiftDriver/Toolchains/Toolchain.swift b/Sources/SwiftDriver/Toolchains/Toolchain.swift
+index e366bde..c124748 100644
+--- a/Sources/SwiftDriver/Toolchains/Toolchain.swift
++++ b/Sources/SwiftDriver/Toolchains/Toolchain.swift
+@@ -193,8 +193,27 @@ extension Toolchain {
+       return try AbsolutePath(validating: path).parentDirectory
+     }
+   }
+ 
++  /// The root of the toolchain that the *compiler* lives in.
++  ///
++  /// A Swift toolchain installs the driver next to `swift-frontend`, so this
++  /// is normally just the parent of the driver's own directory. Nixpkgs
++  /// installs them in separate store paths and points the driver at the
++  /// frontend through the environment; the compiler's plugins, in-process
++  /// plugin server and resource directories are all relative to the frontend,
++  /// not to the driver, so prefer that when it is set.
++  var compilerToolchainRoot: AbsolutePath {
++    get throws {
++      if compilerExecutableDir == nil,
++         let frontend = envVar(forExecutable: "swift-frontend"),
++         let frontendPath = try? AbsolutePath(validating: frontend) {
++        return frontendPath.parentDirectory.parentDirectory
++      }
++      return try executableDir.parentDirectory
++    }
++  }
++
+   /// Looks for `SWIFT_DRIVER_TOOLNAME_EXEC` in the `env` property.
+   /// - Returns: Environment variable value, if any.
+   func envVar(forExecutable toolName: String) -> String? {
+     return env[envVarName(for: toolName)]

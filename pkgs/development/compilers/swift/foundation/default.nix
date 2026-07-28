@@ -1,19 +1,29 @@
 {
   lib,
   stdenv,
-  fetchpatch,
+  fetchFromGitHub,
   callPackage,
   cmake,
   ninja,
   swift,
   Dispatch,
-  icu,
   libxml2,
   curl,
 }:
 
 let
   sources = callPackage ../sources.nix { };
+
+  # Since Swift 6, swift-corelibs-foundation is a thin shim over the
+  # Swift-native swift-foundation, which it (and swift-foundation in turn)
+  # pulls in using FetchContent. Provide the checkouts locally so that no
+  # network access is needed during the build.
+  swift-collections = fetchFromGitHub {
+    owner = "apple";
+    repo = "swift-collections";
+    rev = "1.1.6";
+    hash = "sha256-+f9Azcl+NbDvxlMsX0UbT3n87aYaBR1Kjp3rDqoLgkA=";
+  };
 in
 stdenv.mkDerivation {
   pname = "swift-corelibs-foundation";
@@ -32,11 +42,17 @@ stdenv.mkDerivation {
     swift
   ];
   buildInputs = [
-    icu
     libxml2
     curl
   ];
   propagatedBuildInputs = [ Dispatch ];
+
+  # ICU now comes from swift-foundation-icu rather than the system copy.
+  cmakeFlags = [
+    (lib.cmakeFeature "_SwiftFoundation_SourceDIR" "${sources.swift-foundation}")
+    (lib.cmakeFeature "_SwiftFoundationICU_SourceDIR" "${sources.swift-foundation-icu}")
+    (lib.cmakeFeature "_SwiftCollections_SourceDIR" "${swift-collections}")
+  ];
 
   preConfigure = ''
     # Fails to build with -D_FORTIFY_SOURCE.

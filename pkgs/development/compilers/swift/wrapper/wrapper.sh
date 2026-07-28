@@ -162,7 +162,18 @@ fi
 # which is a signal that we're targeting darwin. (Copied from add-flags in libc but tailored for Swift).
 if [ "@darwinMinVersion@" ]; then
     # Make sure the wrapped Swift compiler can find the overlays in the SDK.
-    NIX_SWIFTFLAGS_COMPILE+=" -I $SDKROOT/usr/lib/swift"
+    #
+    # Our own modules have to be listed first. The SDK ships Swift modules the
+    # toolchain also provides (`Swift` itself, `_StringProcessing`,
+    # `Observation`, …), and a user `-I` outranks the compiler's runtime library
+    # import paths — so with only the SDK on the list, the standard library was
+    # loaded from the SDK rather than from the toolchain. That silently
+    # type-checks every program against whatever Swift the pinned SDK shipped;
+    # with a toolchain several releases newer it also breaks outright, e.g.
+    # `@Observable` fails with "declaration name 'shouldNotifyObservers' is not
+    # covered by macro 'Observable'" because the macro plugin is the
+    # toolchain's while the macro declaration came from the SDK.
+    NIX_SWIFTFLAGS_COMPILE+=" -I @swiftModuleDir@ -I $SDKROOT/usr/lib/swift"
     NIX_LDFLAGS_@suffixSalt@+=" -L $SDKROOT/usr/lib/swift"
 fi
 

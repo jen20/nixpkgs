@@ -2,15 +2,20 @@
 {
   workspaceStateFile = ./workspace-state.json;
   hashes = {
-    "swift-argument-parser" = "sha256-qEJ329hqQyQVxtHScD7qPmWW9ZDf9bX+4xgpDlX0w5A=";
-    "swift-asn1" = "sha256-6NqPGUuM55YOXCMqNsqPm/3smKhSC2UIYHJSwtIiuoc=";
-    "swift-certificates" = "sha256-n5dE5J8f7PAVoJkIpiKrrDvB0xIil5VwtzC2mx6vz80=";
-    "swift-collections" = "sha256-WNj19mRvDSZNcDzZvmtS+jZxngBooiHekh3IsPZnKUQ=";
-    "swift-crypto" = "sha256-lcB497b/T1bHShPrjNjHthrs76pDFpU+4uN0uW4tz+4=";
-    "swift-driver" = "sha256-Xaz9gZuOspDb+PB67d6tXfpcs+kkDCPSkhu+eIfrb0A=";
-    "swift-llbuild" = "sha256-kUm8/+DWDBhuqU/kJBleqSl8/Vz478pMhx5QK2g7k0o=";
-    "swift-system" = "sha256-p18QHzO+NtoY/WQzOD+PfD+bjqrIWsbeEbsJLPqEAhA=";
-    "swift-tools-support-core" = "sha256-Pqy01AyDg7ZTyDM6lV69e6nhfhxwFTOhGFTfhcA1e9E=";
-    "Yams" = "sha256-AY/fIvB7THrl9GWzGJL8eDBbkcLw27tSRTGtUqmYw8k=";
+    "swift-argument-parser" = "sha256-JXNjFpLNaqzOGXlIgQtwzG2Yq1daOl4tmTAUcZL4thM=";
+    "swift-asn1" = "sha256-hikWOlKKW0VplBuDgrt/Xyao3gsDS5IkxsMfbITHT2I=";
+    "swift-build" = "sha256-UW6OD3WyAuN1/vkzlANfWr9lJ2x9mLFgdYC8pwbVqjE=";
+    "swift-certificates" = "sha256-sGF9dJr4TDYXWSqwj9JeM+TaBq6GdvCBvqTx40CucI4=";
+    "swift-collections" = "sha256-+f9Azcl+NbDvxlMsX0UbT3n87aYaBR1Kjp3rDqoLgkA=";
+    "swift-crypto" = "sha256-dS2QVkY0IWzmg4vokFLb64b9CM1llvJ5gt4ySGLKuNc=";
+    "swift-docc-plugin" = "sha256-BqtE2E75mI7c+BxxqDW9hvLxWxo2bbVul6kjA+/lCaI=";
+    "swift-docc-symbolkit" = "sha256-+uQQiqVAon1UefkIM2FXwQIR5PVgR1K5e76Gvj4/g5M=";
+    "swift-driver" = "sha256-XilPErlnLI7JOnEQM3zEieyo+0/7q2hYfHfnDBtP7qE=";
+    "swift-llbuild" = "sha256-w+pZRXiGSHsxK+ewMdfX49rAJYfZ9wOql/vUGLXpJvo=";
+    "swift-syntax" = "sha256-zr+2MlGncEu1bEQwUUxlySDx4XOyK+LnX1SRbtm9ERc=";
+    "swift-system" = "sha256-fkPD9lz+XnMRu2Nr62Z+xaPXfK3EYaWaTjO2ZdMPuN8=";
+    "swift-toolchain-sqlite" = "sha256-Cb9/Maz1JYeRBW1gx4n8k4bZOeMsntIQm7lcaEL5B48=";
+    "swift-tools-protocols" = "sha256-5de3hh3wBqtC3U/LxFcNhKbAw4KbHd4M/VTKHzR49/k=";
+    "swift-tools-support-core" = "sha256-LAboqDVEoz2Sgp3BIrasS2DVmiug89yAioJ/mFIVIjA=";
   };
 }

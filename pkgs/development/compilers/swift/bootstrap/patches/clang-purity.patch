@@ -5,13 +5,17 @@ Subject: [PATCH] "purity" patch for 5.0
 
 --- clang/lib/Driver/ToolChains/Gnu.cpp
 +++ clang/lib/Driver/ToolChains/Gnu.cpp
-@@ -376,9 +376,6 @@
-                            ToolChain.isPIEDefault(Args));
-       if (IsPIE)
-         CmdArgs.push_back("-pie");
+@@ -480,13 +480,6 @@
+   } else {
+     if (Args.hasArg(options::OPT_rdynamic))
+       CmdArgs.push_back("-export-dynamic");
+-
+-    if (!Args.hasArg(options::OPT_shared) && !IsStaticPIE &&
+-        !Args.hasArg(options::OPT_r)) {
 -      CmdArgs.push_back("-dynamic-linker");
 -      CmdArgs.push_back(Args.MakeArgString(Twine(D.DyldPrefix) +
 -                                           ToolChain.getDynamicLinker(Args)));
-     }
+-    }
    }
-
+ 
+   CmdArgs.push_back("-o");

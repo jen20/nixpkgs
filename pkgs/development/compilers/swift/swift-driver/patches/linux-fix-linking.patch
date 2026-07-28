@@ -1,5 +1,5 @@
 diff --git a/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift b/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift
-index a4a735f498..381522cc1f 100644
+index eaf15a8..27634dd 100644
 --- a/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift
 +++ b/Sources/SwiftDriver/Jobs/GenericUnixToolchain+LinkerSupport.swift
 @@ -10,6 +10,7 @@
@@ -10,9 +10,9 @@ index a4a735f498..381522cc1f 100644
  import SwiftOptions
  
  import func TSCBasic.lookupExecutablePath
-@@ -130,7 +131,18 @@
-       }
- 
+@@ -93,7 +94,18 @@ extension GenericUnixToolchain {
+                                                    negative: .noStaticExecutable,
+                                                   default: false)
        let clangTool: Tool = cxxCompatEnabled ? .clangxx : .clang
 -      var clangPath = try getToolPath(clangTool)
 +
@@ -30,11 +30,11 @@ index a4a735f498..381522cc1f 100644
        if let toolsDirPath = parsedOptions.getLastArgument(.toolsDirectory) {
          // FIXME: What if this isn't an absolute path?
          let toolsDir = try AbsolutePath(validating: toolsDirPath.asSingle)
-@@ -146,6 +158,7 @@
+@@ -109,6 +121,7 @@ extension GenericUnixToolchain {
          commandLine.appendFlag("-B")
          commandLine.appendPath(toolsDir)
        }
 +      } // Nix
  
        // Executables on Linux get -pie
-       if targetTriple.os == .linux && linkerOutputType == .executable {
+       if targetTriple.os == .linux && linkerOutputType == .executable && !staticExecutable {

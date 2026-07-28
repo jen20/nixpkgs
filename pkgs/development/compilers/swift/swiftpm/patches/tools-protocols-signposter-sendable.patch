@@ -1,0 +1,22 @@
+`QueueBasedMessageHandler` captures a `Signposter` (`OSSignposter`) and an
+`OSSignpostID` in explicitly `@Sendable` closures, which is an error in any
+language mode unless those types are `Sendable`. Apple declared them so in a
+later SDK than the one this toolchain is pinned to (`apple-sdk_14`, whose `os`
+module is user-module-version 1049.100.4).
+
+Upstream already handles exactly this for `OSSignpostIntervalState` with a
+version-gated retroactive conformance; extend that block to cover the other two
+types. The guard means this disappears by itself once the pinned SDK is new
+enough, and upstream's `#if compiler(>=6.4)` reminder below it still applies.
+
+--- a/Sources/SKLogging/Logging.swift
++++ b/Sources/SKLogging/Logging.swift
+@@ -23,6 +23,8 @@
+ // `OSSignpostIntervalState` to `Sendable`
+ #if !canImport(os, _version: 1062.100)
+ extension OSSignpostIntervalState: @retroactive @unchecked Sendable {}
++extension OSSignposter: @retroactive @unchecked Sendable {}
++extension OSSignpostID: @retroactive @unchecked Sendable {}
+ #endif
+ 
+ #if compiler(>=6.4)

@@ -12,8 +12,8 @@
         },
         "state": {
           "checkoutState": {
-            "revision": "fee6933f37fde9a5e12a1e4aeaa93fe60116ff2a",
-            "version": "1.2.2"
+            "revision": "cdd0ef3755280949551dc26dee5de9ddeda89f54",
+            "version": "1.6.2"
           },
           "name": "sourceControlCheckout"
         },
@@ -24,13 +24,13 @@
         "packageRef": {
           "identity": "swift-llbuild",
           "kind": "remoteSourceControl",
-          "location": "https://github.com/apple/swift-llbuild.git",
+          "location": "https://github.com/swiftlang/swift-llbuild.git",
           "name": "llbuild"
         },
         "state": {
           "checkoutState": {
-            "branch": "release/5.10",
-            "revision": "fd7c2e0d9279edd023ced6b0a590f8407f5472f9"
+            "branch": "release/6.3",
+            "revision": "e38525ae3519021f014ad91e7bf86e7ae86044f5"
           },
           "name": "sourceControlCheckout"
         },
@@ -39,55 +39,39 @@
       {
         "basedOn": null,
         "packageRef": {
-          "identity": "swift-system",
+          "identity": "swift-toolchain-sqlite",
           "kind": "remoteSourceControl",
-          "location": "https://github.com/apple/swift-system.git",
-          "name": "swift-system"
+          "location": "https://github.com/swiftlang/swift-toolchain-sqlite",
+          "name": "swift-toolchain-sqlite"
         },
         "state": {
           "checkoutState": {
-            "revision": "836bc4557b74fe6d2660218d56e3ce96aff76574",
-            "version": "1.1.1"
+            "revision": "b45b80b943e88db3cb8ddea798fa3fa9912375ff",
+            "version": "1.0.7"
           },
           "name": "sourceControlCheckout"
         },
-        "subpath": "swift-system"
+        "subpath": "swift-toolchain-sqlite"
       },
       {
         "basedOn": null,
         "packageRef": {
           "identity": "swift-tools-support-core",
           "kind": "remoteSourceControl",
-          "location": "https://github.com/apple/swift-tools-support-core.git",
+          "location": "https://github.com/swiftlang/swift-tools-support-core.git",
           "name": "swift-tools-support-core"
         },
         "state": {
           "checkoutState": {
-            "branch": "release/5.10",
-            "revision": "90bdc2a157ebacc5d3de0c83e085d05d22ca5fa0"
+            "branch": "release/6.3",
+            "revision": "44be92e627f754f593ca99f1b0c982e389e9bb20"
           },
           "name": "sourceControlCheckout"
         },
         "subpath": "swift-tools-support-core"
-      },
-      {
-        "basedOn": null,
-        "packageRef": {
-          "identity": "yams",
-          "kind": "remoteSourceControl",
-          "location": "https://github.com/jpsim/Yams.git",
-          "name": "Yams"
-        },
-        "state": {
-          "checkoutState": {
-            "revision": "01835dc202670b5bb90d07f3eae41867e9ed29f6",
-            "version": "5.0.1"
-          },
-          "name": "sourceControlCheckout"
-        },
-        "subpath": "Yams"
       }
-    ]
+    ],
+    "prebuilts": []
   },
-  "version": 6
+  "version": 7
 }

@@ -5,15 +5,15 @@ patch it to also consider `-idirafter` and `-isystem` as added by cc-wrapper.
 
 --- a/lib/ClangImporter/ClangIncludePaths.cpp
 +++ b/lib/ClangImporter/ClangIncludePaths.cpp
-@@ -149,6 +149,7 @@ ClangImporter::createClangDriver(
+@@ -142,6 +142,7 @@
  /// \return a path without dots (`../`, './').
- static std::optional<Path> findFirstIncludeDir(
+ static llvm::Optional<Path> findFirstIncludeDir(
      const llvm::opt::InputArgList &args,
 +    const llvm::opt::ArgList &DriverArgs,
      const ArrayRef<const char *> expectedFileNames,
      const llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> &vfs) {
    // C++ stdlib paths are added as `-internal-isystem`.
-@@ -158,6 +159,14 @@ static std::optional<Path> findFirstIncludeDir(
+@@ -151,6 +152,14 @@
    llvm::append_range(includeDirs,
                       args.getAllArgValues(
                           clang::driver::options::OPT_internal_externc_isystem));
@@ -25,22 +25,21 @@ patch it to also consider `-idirafter` and `-isystem` as added by cc-wrapper.
 +  llvm::append_range(includeDirs,
 +                     DriverArgs.getAllArgValues(
 +                         clang::driver::options::OPT_cxx_isystem));
-
+ 
    for (const auto &includeDir : includeDirs) {
      Path dir(includeDir);
-@@ -227,7 +236,8 @@ getLibcFileMapping(const ASTContext &ctx, StringRef modulemapFileName,
+@@ -218,7 +227,7 @@
    // modulemap are present.
-   Path libcDir;
+   Path glibcDir;
    if (auto dir = findFirstIncludeDir(
 -          parsedIncludeArgs, {"inttypes.h", "unistd.h", "stdint.h"}, vfs)) {
-+          parsedIncludeArgs, clangDriverArgs,
-+          {"inttypes.h", "unistd.h", "stdint.h"}, vfs)) {
-     libcDir = dir.value();
++          parsedIncludeArgs, clangDriverArgs, {"inttypes.h", "unistd.h", "stdint.h"}, vfs)) {
+     glibcDir = dir.value();
    } else {
-     if (!suppressDiagnostic)
-@@ -309,7 +319,7 @@ static void getLibStdCxxFileMapping(
-     return;
-
+     ctx.Diags.diagnose(SourceLoc(), diag::glibc_not_found, triple.str());
+@@ -276,7 +285,7 @@
+   auto parsedStdlibArgs = parseClangDriverArgs(clangDriver, stdlibArgStrings);
+ 
    Path cxxStdlibDir;
 -  if (auto dir = findFirstIncludeDir(parsedStdlibArgs,
 +  if (auto dir = findFirstIncludeDir(parsedStdlibArgs, clangDriverArgs,

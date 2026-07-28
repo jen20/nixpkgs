@@ -11,7 +11,7 @@ bootstrapping, or the compiler will fail when run from the build directory.
  void CompilerInvocation::computeRuntimeResourcePathFromExecutablePath(
      StringRef mainExecutablePath, bool shared,
      llvm::SmallVectorImpl<char> &runtimeResourcePath) {
-+  if (mainExecutablePath.starts_with("@storeDir@")) {
++  if (mainExecutablePath.startswith("@storeDir@")) {
 +    auto libPath = StringRef("@lib@");
 +    runtimeResourcePath.append(libPath.begin(), libPath.end());
 +  } else {

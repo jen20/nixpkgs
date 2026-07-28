@@ -2,7 +2,6 @@
   lib,
   stdenv,
   callPackage,
-  fetchFromGitHub,
   cmake,
   ninja,
   git,
@@ -119,7 +118,12 @@ let
             # CMake setup hook) instead of lib/swift/. This'd be easily fixed by
             # fixDarwinDylibNames, but some builds create libraries that reference
             # eachother, and we also have to fix those references.
-            dylibs="$(find $out/lib/swift* -name '*.dylib')"
+            # Search all of `lib`, not just `lib/swift*`: libraries in plain
+            # `lib` reference the ones under `lib/swift/host` too (swiftpm's
+            # `libCommands.dylib` needs `libSwiftRefactor.dylib`), so they need
+            # the same rewrites. For a library already in the right place the
+            # `-id` is simply a no-op.
+            dylibs="$(find $out/lib -name '*.dylib' 2>/dev/null)"
             changes=""
             for dylib in $dylibs; do
               changes+=" -change $(otool -D $dylib | tail -n 1) $dylib"
@@ -127,6 +131,24 @@ let
             for dylib in $dylibs; do
               install_name_tool -id $dylib $changes $dylib
             done
+
+            # Executables need the same rewrites. They record the same wrong
+            # `$out/lib/<name>` paths, so without this they cannot start at all
+            # ("Library not loaded: .../lib/libSwiftRefactor.dylib").
+            #
+            # Two things to be careful about. `$changes` is empty for packages
+            # whose libraries are not under `lib/swift*`, and `install_name_tool`
+            # with no operations exits non-zero. And `otool -L` exits 0 even on
+            # the shell wrappers `wrapProgram` leaves behind — it reports "is not
+            # an object file" rather than failing — so the exit status is not a
+            # usable test for "is this Mach-O".
+            if [[ -n "$changes" ]]; then
+              for prog in $out/bin/* $out/bin/.*-wrapped; do
+                [[ -f $prog ]] || continue
+                otool -L "$prog" 2>&1 | grep -q "is not an object file" && continue
+                install_name_tool $changes "$prog"
+              done
+            fi
           '';
 
         cmakeFlags = (attrs.cmakeFlags or [ ]) ++ [
@@ -230,21 +252,26 @@ let
 
     postInstall =
       cmakeGlue.ArgumentParser
+      + ''
+        # `ArgumentParserToolInfo` is a static library that upstream builds but
+        # never installs: its code ends up inside libArgumentParser, so only the
+        # Swift module is missing. swift-driver's `swift-help` imports it
+        # directly, so install the module the same way `_install_target` would.
+        # Take the module triple from the sibling module CMake did install, so
+        # this stays right on every platform without hardcoding it.
+        apModule=$out/lib/swift/${swiftOs}/ArgumentParser.swiftmodule
+        triple=$(basename "$(echo "$apModule"/*.swiftmodule | cut -d' ' -f1)" .swiftmodule)
+        moduleDir=$out/lib/swift/${swiftOs}/ArgumentParserToolInfo.swiftmodule
+        mkdir -p "$moduleDir"
+        for ext in swiftmodule swiftdoc; do
+          install -m644 "swift/ArgumentParserToolInfo.$ext" "$moduleDir/$triple.$ext"
+        done
+      ''
       + lib.optionalString stdenv.hostPlatform.isLinux ''
         # Fix rpath so ArgumentParserToolInfo can be found.
         patchelf --add-rpath "$out/lib/swift/${swiftOs}" \
           $out/lib/swift/${swiftOs}/libArgumentParser.so
       '';
-  };
-
-  Yams = mkBootstrapDerivation {
-    name = "Yams";
-    src = generated.sources.Yams;
-
-    # Conflicts with BUILD file on case-insensitive filesystems.
-    cmakeBuildDir = "_build";
-
-    postInstall = cmakeGlue.Yams;
   };
 
   llbuild = mkBootstrapDerivation {
@@ -297,18 +324,11 @@ let
     src = generated.sources.swift-driver;
 
     buildInputs = [
-      Yams
       llbuild
       swift-system
       swift-argument-parser
       swift-tools-support-core
     ];
-
-    postPatch = ''
-      # Tries to link against CYaml, but that's private.
-      substituteInPlace Sources/SwiftDriver/CMakeLists.txt \
-        --replace-fail CYaml ""
-    '';
 
     postInstall = cmakeGlue.SwiftDriver + ''
       # Swift modules are not installed.
@@ -319,13 +339,7 @@ let
 
   swift-crypto = mkBootstrapDerivation {
     name = "swift-crypto";
-    src = fetchFromGitHub {
-      owner = "apple";
-      repo = "swift-crypto";
-      rev = "95ba0316a9b733e92bb6b071255ff46263bbe7dc"; # 3.15.1, as opposed to the pinned version of 3.0.0
-      sha256 = "sha256-RzoUBx4l12v0ZamSIAEpHHCRQXxJkXJCwVBEj7Qwg9I=";
-      fetchSubmodules = true;
-    };
+    src = generated.sources.swift-crypto;
 
     buildInputs = [
       swift-asn1
@@ -384,6 +398,65 @@ let
     postInstall = cmakeGlue.SwiftCertificates;
   };
 
+  swift-tools-protocols = mkBootstrapDerivation {
+    name = "swift-tools-protocols";
+    src = generated.sources.swift-tools-protocols;
+
+    patches = lib.optionals stdenv.hostPlatform.isDarwin [
+      ./patches/tools-protocols-signposter-sendable.patch
+    ];
+
+    buildInputs = [
+      swift-system
+    ];
+
+    postInstall = cmakeGlue.SwiftToolsProtocols + ''
+      # This package installs its static libraries directly into `lib` and does
+      # not install Swift modules at all, so consumers can neither link against
+      # it nor import it. Move everything into the `lib/swift_static/<os>`
+      # layout the other bootstrap dependencies use, and install the modules
+      # from the build tree alongside.
+      mkdir -p $out/lib/swift_static/${swiftOs} $out/${swiftStaticModuleSubdir}
+      mv $out/lib/*.a $out/lib/swift_static/${swiftOs}/
+      install -m644 swift/*.swiftmodule swift/*.swiftdoc $out/${swiftStaticModuleSubdir}/
+
+      # `ToolsProtocolsCAtomics` is a header-only Clang module, so it has no
+      # build product at all — copy its headers and module map across.
+      mkdir -p $out/include
+      cp -r ../Sources/ToolsProtocolsCAtomics/include $out/include/ToolsProtocolsCAtomics
+    '';
+  };
+
+  swift-build = mkBootstrapDerivation {
+    name = "swift-build";
+    src = generated.sources.swift-build;
+
+    buildInputs = [
+      llbuild
+      sqlite
+      swift-argument-parser
+      swift-collections
+      swift-driver
+      swift-system
+      swift-tools-protocols
+      swift-tools-support-core
+    ];
+
+    postInstall = cmakeGlue.SwiftBuild + ''
+      # Swift modules are not installed.
+      mkdir -p $out/${swiftModuleSubdir}
+      cp swift/*.swift{module,doc} $out/${swiftModuleSubdir}/
+
+      # Neither are the headers of the two C targets. `SwiftBuild.swiftmodule`
+      # refers to `SWBCLibc`, so anything importing SwiftBuild needs their
+      # module maps on the include path, even though nothing links them
+      # directly.
+      mkdir -p $out/include
+      cp -r ../Sources/SWBCLibc/include $out/include/SWBCLibc
+      cp -r ../Sources/SWBCSupport $out/include/SWBCSupport
+    '';
+  };
+
   # Build a bootrapping swiftpm using CMake.
   swiftpm-bootstrap = mkBootstrapDerivation (
     commonAttrs
@@ -395,16 +468,37 @@ let
         sqlite
         swift-argument-parser
         swift-asn1
+        swift-build
         swift-certificates
         swift-collections
         swift-crypto
         swift-driver
         swift-system
+        swift-tools-protocols
         swift-tools-support-core
+      ];
+
+      # swift-syntax is added with `FetchContent`, so its targets are excluded
+      # from `all` and only the ones swiftpm links get built — but swiftpm sets
+      # `SWIFT_SYNTAX_INSTALL_TARGETS`, so the install step expects every one of
+      # them. `SwiftCompilerPlugin` is the only one nothing links (it is for
+      # macro plugin authors), so name it explicitly or the install dies on
+      # "file INSTALL cannot find .../libSwiftCompilerPlugin.dylib".
+      ninjaFlags = [
+        "all"
+        "SwiftCompilerPlugin"
       ];
 
       cmakeFlags = [
         "-DUSE_CMAKE_INSTALL=ON"
+        # swiftpm needs swift-syntax for its macro support and pulls it in with
+        # `FetchContent` when `find_package(SwiftSyntax)` fails — which it always
+        # does here, because the toolchain never installs a `SwiftSyntaxConfig.cmake`
+        # (both swift and swift-syntax generate it with `export()`, which only
+        # writes into a build tree). Point it at our pinned checkout so nothing
+        # is cloned during the build; `BuildSupport/SwiftSyntax/CMakeLists.txt`
+        # provides this variable for exactly that purpose.
+        "-DSWIFTPM_PATH_TO_SWIFT_SYNTAX_SOURCE=${sources.swift-syntax}"
       ];
 
       postInstall = ''
@@ -433,24 +527,55 @@ stdenv.mkDerivation (
       XCTest
     ];
 
-    configurePhase = generated.configure + ''
-      # Functionality provided by Xcode XCTest, but not available in
-      # swift-corelibs-xctest.
-      swiftpmMakeMutable swift-tools-support-core
-      substituteInPlace .build/checkouts/swift-tools-support-core/Sources/TSCTestSupport/XCTestCasePerf.swift \
-        --replace-fail 'canImport(Darwin)' 'false'
+    configurePhase =
+      generated.configure
+      + ''
+        # Functionality provided by Xcode XCTest, but not available in
+        # swift-corelibs-xctest.
+        swiftpmMakeMutable swift-tools-support-core
+        substituteInPlace .build/checkouts/swift-tools-support-core/Sources/TSCTestSupport/XCTestCasePerf.swift \
+          --replace-fail 'canImport(Darwin)' 'false'
 
-      # Prevent a warning about SDK directories we don't have.
-      swiftpmMakeMutable swift-driver
-      patch -p1 -d .build/checkouts/swift-driver -i ${
-        replaceVars ../swift-driver/patches/prevent-sdk-dirs-warnings.patch {
-          inherit (builtins) storeDir;
+        # Prevent a warning about SDK directories we don't have.
+        swiftpmMakeMutable swift-driver
+        patch -p1 -d .build/checkouts/swift-driver -i ${
+          replaceVars ../swift-driver/patches/prevent-sdk-dirs-warnings.patch {
+            inherit (builtins) storeDir;
+          }
         }
-      }
-    '';
+      ''
+      + lib.optionalString stdenv.hostPlatform.isDarwin ''
+        # The same `OSSignposter` Sendable fix the CMake bootstrap needs. This
+        # build compiles swift-tools-protocols from the vendored checkout rather
+        # than using our derivation, so it has to be patched here too.
+        swiftpmMakeMutable swift-tools-protocols
+        patch -p1 -d .build/checkouts/swift-tools-protocols \
+          -i ${./patches/tools-protocols-signposter-sendable.patch}
+
+        swiftpmMakeMutable swift-build
+        patch -p1 -d .build/checkouts/swift-build \
+          -i ${./patches/swift-build-oslog-sendable.patch}
+      '';
 
     buildPhase = ''
-      TERM=dumb swift-build -c release
+      # Build only what `installPhase` actually installs. A bare `swift-build`
+      # builds every target in the package, including `_InternalTestSupport`,
+      # which exists solely for swiftpm's own test suite — and which we neither
+      # build nor run (`doCheck` is off, `checkPhase` is commented out below).
+      #
+      # That target is not merely wasted work: it does `import Testing` without
+      # declaring a dependency, expecting swift-testing to come from the
+      # toolchain, and then uses its `#expect` macro. Satisfying that needs
+      # swift-testing's module, its library, *and* its macro plugin passed by
+      # hand — and our plugin is an executable rather than the dylib a real
+      # toolchain ships (see ../swift-testing), which the compiler rejects with
+      # "produced malformed response". None of it affects the output, so build
+      # the three things we install and nothing else.
+      # `--product`, not `--target`: for an executable target, `--target` only
+      # compiles the module and never links the binary.
+      TERM=dumb swift-build -c release --product swift-package-manager
+      TERM=dumb swift-build -c release --product PackageDescription
+      TERM=dumb swift-build -c release --product PackagePlugin
     '';
 
     # TODO: Tests depend on indexstore-db being provided by an existing Swift
@@ -469,23 +594,42 @@ stdenv.mkDerivation (
       cp $binPath/swift-package-manager $out/bin/swift-package
       wrapProgram $out/bin/swift-package \
         --prefix PATH : ${lib.makeBinPath runtimeDeps}
-      for tool in swift-build swift-test swift-run swift-package-collection swift-experimental-destination; do
+      # `swift-package-manager` dispatches on its own basename and calls
+      # `fatalError` for anything it does not recognise, so this list has to
+      # match the switch in `Sources/swift-package-manager/SwiftPM.swift`.
+      # `swift-experimental-destination` was removed in the 6.x window and
+      # replaced by `swift-sdk` (plus a deprecated `swift-experimental-sdk`).
+      for tool in swift-build swift-test swift-run swift-package-collection \
+                  swift-package-registry swift-sdk swift-experimental-sdk; do
         ln -s $out/bin/swift-package $out/bin/$tool
       done
 
+      # Modules moved out of the bin directory into a `Modules` subdirectory of
+      # it. `Utilities/bootstrap`'s `install_dylib` reads them from there, and
+      # also installs more than one module per dylib — `CompilerPluginSupport`
+      # is part of the `PackageDescription` product and has no dylib of its own.
       installSwiftpmModule() {
-        mkdir -p $out/lib/swift/pm/$2
-        cp $binPath/lib$1${sharedLibraryExt} $out/lib/swift/pm/$2/
+        local dylib=$1 dest=$2
+        shift 2
 
-        if [[ -f $binPath/$1.swiftinterface ]]; then
-          cp $binPath/$1.swiftinterface $out/lib/swift/pm/$2/
-        else
-          cp -r $binPath/$1.swiftmodule $out/lib/swift/pm/$2/
-        fi
-        cp $binPath/$1.swiftdoc $out/lib/swift/pm/$2/
+        mkdir -p $out/lib/swift/pm/$dest
+        cp $binPath/lib$dylib${sharedLibraryExt} $out/lib/swift/pm/$dest/
+
+        for module in "$@"; do
+          # Install the binary module *and* the textual interface where both
+          # exist. swiftc prefers the binary one, which is also what upstream
+          # effectively ships: its own `.swiftinterface` check looks in the bin
+          # directory rather than `Modules`, so it never fires.
+          cp -r $binPath/Modules/$module.swiftmodule $out/lib/swift/pm/$dest/
+          if [[ -f $binPath/Modules/$module.swiftinterface ]]; then
+            cp $binPath/Modules/$module.swiftinterface $out/lib/swift/pm/$dest/
+          fi
+          cp $binPath/Modules/$module.swiftdoc $out/lib/swift/pm/$dest/
+        done
       }
-      installSwiftpmModule PackageDescription ManifestAPI
-      installSwiftpmModule PackagePlugin PluginAPI
+      installSwiftpmModule PackageDescription ManifestAPI \
+        PackageDescription CompilerPluginSupport
+      installSwiftpmModule PackagePlugin PluginAPI PackagePlugin
     '';
 
     setupHook = ./setup-hook.sh;

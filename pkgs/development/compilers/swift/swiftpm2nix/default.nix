@@ -4,7 +4,7 @@
   callPackage,
   makeWrapper,
   jq,
-  nurl,
+  nix-prefetch-git,
 }:
 
 stdenv.mkDerivation {
@@ -20,7 +20,7 @@ stdenv.mkDerivation {
       --prefix PATH : ${
         lib.makeBinPath [
           jq
-          nurl
+          nix-prefetch-git
         ]
       }
   '';

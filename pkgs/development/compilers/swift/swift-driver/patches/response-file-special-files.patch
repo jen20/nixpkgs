@@ -1,0 +1,66 @@
+Allow response files to be special files.
+
+Nixpkgs' compiler wrappers pass the flags they inject through a response file
+written with a process substitution, so the driver is invoked as
+`swiftc @/dev/fd/63` — a pipe, not a regular file. Two separate things in
+swift-driver reject that:
+
+  * `resolveResponseFile` requires `isFile`, which is false for a pipe. This
+    half is https://github.com/swiftlang/swift-driver/pull/1197, open since
+    2022 and still unmerged.
+
+  * Even with that fixed, the read itself fails. `TSCBasic`'s
+    `readFileContents` was reimplemented on top of Foundation's
+    `Data(contentsOf:)`, which refuses anything that is not a regular file, so
+    every invocation dies with
+
+      error: FileSystemError(kind: TSCBasic.FileSystemError.Kind.invalidAccess,
+        path: Optional(<AbsolutePath:"/dev/fd/63">), ...)
+
+    That reads as a permissions problem but is not one — the same file is read
+    happily by the C++ driver, which uses plain `open`/`read`. Fall back to a
+    read that works on pipes when the regular-file read fails, so the
+    behaviour is unchanged for ordinary response files.
+
+diff --git a/Sources/SwiftDriver/Driver/Driver.swift b/Sources/SwiftDriver/Driver/Driver.swift
+index d1ca038..07a7f78 100644
+--- a/Sources/SwiftDriver/Driver/Driver.swift
++++ b/Sources/SwiftDriver/Driver/Driver.swift
+@@ -12,6 +12,7 @@
+ import SwiftOptions
+ 
+ import class Dispatch.DispatchQueue
++import class Foundation.FileHandle
+ import class TSCBasic.DiagnosticsEngine
+ import class TSCBasic.UnknownLocation
+ import enum TSCBasic.ProcessEnv
+@@ -1736,7 +1737,7 @@ extension Driver {
+       }
+       responseFile = absolutePath
+     }
+-    return fileSystem.isFile(responseFile) ? responseFile : nil
++    return fileSystem.isReadable(responseFile) ? responseFile : nil
+   }
+ 
+   /// Tracks the given response file and returns a token if it has not already
+@@ -1781,7 +1782,19 @@ extension Driver {
+           visitedResponseFiles.remove(visitationToken)
+         }
+ 
+-        let contents = try fileSystem.readFileContents(responseFile).cString
++        let contents: String
++        do {
++          contents = try fileSystem.readFileContents(responseFile).cString
++        } catch {
++          // `readFileContents` goes through Foundation's `Data(contentsOf:)`,
++          // which only handles regular files. A response file passed as a
++          // process substitution is a pipe, so read it a way that copes.
++          guard let handle = FileHandle(forReadingAtPath: responseFile.pathString) else {
++            throw error
++          }
++          defer { handle.closeFile() }
++          contents = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
++        }
+         let lines = tokenizeResponseFile(contents)
+         result.append(contentsOf: try expandResponseFiles(lines, fileSystem: fileSystem, diagnosticsEngine: diagnosticsEngine, relativeTo: basePath, visitedResponseFiles: &visitedResponseFiles))
+       } else {

@@ -1,36 +1,53 @@
 Disable rpath for the bootstrap build with CMake.
 
---- a/Sources/PackageDescription/CMakeLists.txt
-+++ b/Sources/PackageDescription/CMakeLists.txt
-@@ -27,14 +27,11 @@
-   $<$<COMPILE_LANGUAGE:Swift>:-package-description-version$<SEMICOLON>999.0>)
+diff --git a/Sources/Runtimes/CMakeLists.txt b/Sources/Runtimes/CMakeLists.txt
+index f5c1e8a..33575f7 100644
+--- a/Sources/Runtimes/CMakeLists.txt
++++ b/Sources/Runtimes/CMakeLists.txt
+@@ -21,7 +21,6 @@ project(SwiftPMRuntime
+ enable_language(C)
+ include(GNUInstallDirs)
  
- if(CMAKE_HOST_SYSTEM_NAME STREQUAL Darwin)
+-set(CMAKE_INSTALL_NAME_DIR "@rpath")
+ set(CMAKE_INSTALL_RPATH "$ORIGIN/../../$<LOWER_CASE:${CMAKE_SYSTEM_NAME}>")
+ set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+ set(CMAKE_POSITION_INDEPENDENT_CODE ${BUILD_SHARED_LIBS})
+diff --git a/Sources/Runtimes/CompilerPluginSupport/CMakeLists.txt b/Sources/Runtimes/CompilerPluginSupport/CMakeLists.txt
+index 95d3720..26e113a 100644
+--- a/Sources/Runtimes/CompilerPluginSupport/CMakeLists.txt
++++ b/Sources/Runtimes/CompilerPluginSupport/CMakeLists.txt
+@@ -12,8 +12,6 @@ target_link_libraries(CompilerPluginSupport PRIVATE
+   PackageDescription)
+ 
+ if(APPLE)
+-  target_link_options(CompilerPluginSupport PRIVATE
+-    "SHELL:-Xlinker -install_name -Xlinker @rpath/CompilerPluginSupport.dylib")
+ else()
+   target_link_libraries(CompilerPluginSupport PRIVATE
+     Foundation)
+diff --git a/Sources/Runtimes/PackageDescription/CMakeLists.txt b/Sources/Runtimes/PackageDescription/CMakeLists.txt
+index efdcdb0..0fd4045 100644
+--- a/Sources/Runtimes/PackageDescription/CMakeLists.txt
++++ b/Sources/Runtimes/PackageDescription/CMakeLists.txt
+@@ -32,8 +32,6 @@ target_compile_definitions(PackageDescription PRIVATE
+   USE_IMPL_ONLY_IMPORTS)
+ 
+ if(APPLE)
 -  target_link_options(PackageDescription PRIVATE
 -    "SHELL:-Xlinker -install_name -Xlinker @rpath/libPackageDescription.dylib")
- endif()
+ else()
+   target_link_libraries(PackageDescription PRIVATE
+     Foundation)
+diff --git a/Sources/Runtimes/PackagePlugin/CMakeLists.txt b/Sources/Runtimes/PackagePlugin/CMakeLists.txt
+index d95d56b..611f9b7 100644
+--- a/Sources/Runtimes/PackagePlugin/CMakeLists.txt
++++ b/Sources/Runtimes/PackagePlugin/CMakeLists.txt
+@@ -22,8 +22,6 @@ add_library(PackagePlugin
+   Utilities.swift)
  
- set_target_properties(PackageDescription PROPERTIES
-     Swift_MODULE_NAME PackageDescription
-     Swift_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/pm/ManifestAPI
--    INSTALL_NAME_DIR \\@rpath
-     OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/pm/ManifestAPI
-     OUTPUT_NAME PackageDescription
-     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/pm/ManifestAPI
---- a/Sources/PackagePlugin/CMakeLists.txt
-+++ b/Sources/PackagePlugin/CMakeLists.txt
-@@ -29,14 +29,11 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL Darwin)
-   set(SWIFT_INTERFACE_PATH ${CMAKE_BINARY_DIR}/pm/PluginAPI/PackagePlugin.swiftinterface)
-   target_compile_options(PackagePlugin PUBLIC
-     $<$<COMPILE_LANGUAGE:Swift>:-emit-module-interface-path$<SEMICOLON>${SWIFT_INTERFACE_PATH}>)
+ if(APPLE)
 -  target_link_options(PackagePlugin PRIVATE
 -    "SHELL:-Xlinker -install_name -Xlinker @rpath/libPackagePlugin.dylib")
- endif()
- 
- set_target_properties(PackagePlugin PROPERTIES
-   Swift_MODULE_NAME PackagePlugin
-   Swift_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/pm/PluginAPI
--  INSTALL_NAME_DIR \\@rpath
-   OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/pm/PluginAPI
-   OUTPUT_NAME PackagePlugin
-   ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/pm/PluginAPI
+ else()
+   target_link_libraries(PackagePlugin PRIVATE
+     Foundation)

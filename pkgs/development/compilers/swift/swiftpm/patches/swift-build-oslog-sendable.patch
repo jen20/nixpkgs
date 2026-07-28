@@ -1,0 +1,24 @@
+`SWBUtil.OSLog` wraps `os.OSLog` and declares itself `Sendable`, which only
+holds if `os.OSLog` is `Sendable` too. Apple declared it so in a later SDK than
+the one this toolchain pins (apple-sdk_14, whose `os` module is
+user-module-version 1049.100.4), so add the conformance retroactively, gated the
+same way swift-tools-protocols gates its `OSSignpostIntervalState` conformance.
+
+--- a/Sources/SWBUtil/OSLog.swift
++++ b/Sources/SWBUtil/OSLog.swift
+@@ -15,6 +15,15 @@
+ #if canImport(os)
+ public import os
+ 
++// Apple declared `os.OSLog` as `Sendable` in a later SDK than the one this
++// toolchain pins. Without the conformance the wrapper below cannot be
++// `Sendable` either, and `log(_:)` cannot capture it. Matches the pattern
++// swift-tools-protocols uses for `OSSignpostIntervalState`; the guard drops it
++// again once the pinned SDK is new enough.
++#if !canImport(os, _version: 1062.100)
++extension os.OSLog: @retroactive @unchecked Sendable {}
++#endif
++
+ /// A wrapper around the OSLog.
+ public final class OSLog: Sendable {
+ 

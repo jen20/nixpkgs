@@ -2,15 +2,17 @@
 {
   workspaceStateFile = ./workspace-state.json;
   hashes = {
-    "swift-argument-parser" = "sha256-G4Tz/AdL5WbRq93aJnQhMjHLH7dEuhmXL3PPn+0H6vM=";
-    "swift-atomics" = "sha256-fjRGySMI7Mv52sCYejWI5YA+IcehOdz5XxK3p+hxwmU=";
-    "swift-cmark" = "sha256-1/LnvAggPkpfJZo9evfP+fCj6NXY9SMxwo7WJA2kXOM=";
-    "swift-collections" = "sha256-VtnHFWd5OUmRBnmIeOF8xn8PASLrHG/pfONWnEuX2sw=";
-    "swift-crypto" = "sha256-vBDjXtynl3HMq1RK/hMOu36b+0hX2SRRnwhPNjPUOsU=";
-    "swift-docc-plugin" = "sha256-r+cFtDTK6rRWDOOsgJNF6J2mfm/oKxoK7HIv6fpFW4o=";
-    "swift-docc-symbolkit" = "sha256-hAcoe57wE9gkPc1E/lXY41W+Eh3a7cUWfRv3Xi4rO2M=";
-    "swift-lmdb" = "sha256-dZDN2pBOE0ZPtneQvEjF+AE4PDwbcaTausR2W4lg9Ss=";
-    "swift-markdown" = "sha256-qb+mSS1A3WzLQdCB9lIz+UhSG9tf0hknitTfh6VIrHs=";
-    "swift-nio" = "sha256-KOvnE5VF6lw9hfTLHIlG+6EV/7kl8hL4IOIVoP2om3Q=";
+    "swift-argument-parser" = "sha256-S9amE8SNwlrQeyQJBTSsFjJpKMqKnmhXlAu5UEy2el8=";
+    "swift-asn1" = "sha256-9WrDipPXevLnevsu3VEF2/W1l38vZIrXDCorpKZ6edo=";
+    "swift-atomics" = "sha256-Ho3/BDUwAVGG26u8Jz2j1mwqFRcLc+DTlqTyGelM+Gc=";
+    "swift-cmark" = "sha256-bmIUjNzyPwZAS4fQFJcZhHz+Cb4nON5cdX4XLNXMTJ4=";
+    "swift-collections" = "sha256-Lomz4BOsTN4MDKBL3pnfkbQQ6QelzUKE2Hw1YGUruZg=";
+    "swift-crypto" = "sha256-exWyZdKeU7dPinn9T9YUI7jmR8Ix9/gj9VTAaAPALA8=";
+    "swift-docc-plugin" = "sha256-u561jJeZg4FoS1leg5Gusan21pa2gLJ98BW3rfQSwEk=";
+    "swift-docc-symbolkit" = "sha256-oGnvRcDFgk5DOmKxqsxelT1ScijOwARmrwlKxOPUz00=";
+    "swift-lmdb" = "sha256-jPtkUnCsfjBu4pJhaDw+umQivU0beTGSVoI2rIv8Mzg=";
+    "swift-markdown" = "sha256-fDYOycjRC1EiXEd44ZZuYFgUfJBV4cqAWKuJU2j+V2Y=";
+    "swift-nio" = "sha256-eEXGQKvaBcebdNbnOrbVPq1GEQvY9p1sk8CVxQra5jY=";
+    "swift-system" = "sha256-Bs0v0nsNn5i5ZbH+9vTxm/O0OjBR560T+sLpPW/W79A=";
   };
 }

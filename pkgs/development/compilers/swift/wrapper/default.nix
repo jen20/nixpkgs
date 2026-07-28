@@ -28,7 +28,25 @@ stdenv.mkDerivation (
       swiftStaticModuleSubdir
       swiftStaticLibSubdir
       ;
+    # Absolute path to this toolchain's own Swift modules, so the wrapper can
+    # list them ahead of the SDK's. (`$out/lib/swift` in the compiler is a
+    # symlink into its `lib` output, so this resolves.)
+    swiftModuleDir = "${swift}/${swift.swiftModuleSubdir}";
     swiftDriver = lib.optionalString useSwiftDriver "${swift-driver}/bin/swift-driver";
+
+    # Pass the arguments through directly rather than via a response file.
+    #
+    # `wrapper.sh` inherits cc-wrapper's response file, which is written with a
+    # process substitution, so the compiler is invoked as `swiftc @/dev/fd/63`
+    # — a pipe. That descriptor does not survive every way a caller can spawn
+    # us: when SwiftPM compiles a package manifest, the driver gets EBADF for
+    # it and the build fails with "Invalid manifest". Nor is there anything to
+    # gain here: unlike cc-wrapper, this wrapper receives the whole command
+    # line as its own argv already, so collapsing it again saves nothing.
+    #
+    # The compiler's internal build wrapper (`compiler/default.nix`) keeps the
+    # default: it is only ever invoked by CMake, where this does not arise.
+    use_response_file_by_default = 0;
     cc_wrapper = clang.override (prev: {
       extraBuildCommands =
         prev.extraBuildCommands

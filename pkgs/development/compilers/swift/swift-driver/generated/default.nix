@@ -2,10 +2,9 @@
 {
   workspaceStateFile = ./workspace-state.json;
   hashes = {
-    "swift-argument-parser" = "sha256-G4Tz/AdL5WbRq93aJnQhMjHLH7dEuhmXL3PPn+0H6vM=";
-    "swift-llbuild" = "sha256-kUm8/+DWDBhuqU/kJBleqSl8/Vz478pMhx5QK2g7k0o=";
-    "swift-system" = "sha256-p18QHzO+NtoY/WQzOD+PfD+bjqrIWsbeEbsJLPqEAhA=";
-    "swift-tools-support-core" = "sha256-Pqy01AyDg7ZTyDM6lV69e6nhfhxwFTOhGFTfhcA1e9E=";
-    "Yams" = "sha256-5qxuCkmopm3uFcoYJKQA8ofW98f53H1gZaPiOh2DS4U=";
+    "swift-argument-parser" = "sha256-c0/UcHFZiGbfWMwekQ0Ln1A6NWSeHm9VFOxEYVrB8P0=";
+    "swift-llbuild" = "sha256-w+pZRXiGSHsxK+ewMdfX49rAJYfZ9wOql/vUGLXpJvo=";
+    "swift-toolchain-sqlite" = "sha256-Cb9/Maz1JYeRBW1gx4n8k4bZOeMsntIQm7lcaEL5B48=";
+    "swift-tools-support-core" = "sha256-LAboqDVEoz2Sgp3BIrasS2DVmiug89yAioJ/mFIVIjA=";
   };
 }

@@ -2,26 +2,33 @@ Swift parses .pc files manually, but this means it bypasses our pkg-config
 wrapper. That wrapper normally takes care of introducing the correct
 PKG_CONFIG_PATH for cross compiling.
 
+diff --git a/Sources/PackageLoading/PkgConfig.swift b/Sources/PackageLoading/PkgConfig.swift
+index 21e0c51..19046cb 100644
 --- a/Sources/PackageLoading/PkgConfig.swift
 +++ b/Sources/PackageLoading/PkgConfig.swift
-@@ -123,14 +123,17 @@ public struct PkgConfig {
+@@ -131,14 +131,19 @@
  
-     private static var envSearchPaths: [AbsolutePath] {
+     private static var envSearchPaths: [Basics.AbsolutePath] {
          get throws {
--            if let configPath = ProcessEnv.vars["PKG_CONFIG_PATH"] {
-+            var result: [AbsolutePath] = []
-+            for envVar in ["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"] {
-+            if let configPath = ProcessEnv.vars[envVar] {
-                 #if os(Windows)
+-            if let configPath = Environment.current["PKG_CONFIG_PATH"] {
+-                #if os(Windows)
 -                return try configPath.split(separator: ";").map({ try AbsolutePath(validating: String($0)) })
-+                result += try configPath.split(separator: ";").map({ try AbsolutePath(validating: String($0)) })
-                 #else
+-                #else
 -                return try configPath.split(separator: ":").map({ try AbsolutePath(validating: String($0)) })
-+                result += try configPath.split(separator: ":").map({ try AbsolutePath(validating: String($0)) })
-                 #endif
+-                #endif
++            // `envVar` is typed as `EnvironmentKey` so the string literals
++            // convert; `Environment`'s subscript no longer accepts a `String`.
++            var result: [Basics.AbsolutePath] = []
++            for envVar: EnvironmentKey in ["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"] {
++                if let configPath = Environment.current[envVar] {
++                    #if os(Windows)
++                    result += try configPath.split(separator: ";").map({ try AbsolutePath(validating: String($0)) })
++                    #else
++                    result += try configPath.split(separator: ":").map({ try AbsolutePath(validating: String($0)) })
++                    #endif
++                }
              }
 -            return []
-+            }
 +            return result
          }
      }

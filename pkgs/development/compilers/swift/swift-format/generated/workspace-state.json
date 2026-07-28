@@ -12,8 +12,8 @@
         },
         "state": {
           "checkoutState": {
-            "revision": "309a47b2b1d9b5e991f36961c983ecec72275be3",
-            "version": "1.6.1"
+            "revision": "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+            "version": "1.8.2"
           },
           "name": "sourceControlCheckout"
         },
@@ -29,8 +29,8 @@
         },
         "state": {
           "checkoutState": {
-            "revision": "b97d09472e847a416629f026eceae0e2afcfad65",
-            "version": "0.7.0"
+            "revision": "924936d0427cb25a61169739a7660230bffa6ea6",
+            "version": "0.8.0"
           },
           "name": "sourceControlCheckout"
         },
@@ -41,13 +41,13 @@
         "packageRef": {
           "identity": "swift-markdown",
           "kind": "remoteSourceControl",
-          "location": "https://github.com/apple/swift-markdown.git",
+          "location": "https://github.com/swiftlang/swift-markdown.git",
           "name": "swift-markdown"
         },
         "state": {
           "checkoutState": {
-            "revision": "d8cf111c276ed18cff82d3cad563d2ca5903b982",
-            "version": "0.7.1"
+            "revision": "3c6f9523da3a1ec2fd829673e472d95b8097a3b8",
+            "version": "0.8.0"
           },
           "name": "sourceControlCheckout"
         },
@@ -58,19 +58,20 @@
         "packageRef": {
           "identity": "swift-syntax",
           "kind": "remoteSourceControl",
-          "location": "https://github.com/apple/swift-syntax.git",
+          "location": "https://github.com/swiftlang/swift-syntax.git",
           "name": "swift-syntax"
         },
         "state": {
           "checkoutState": {
-            "branch": "release/5.10",
-            "revision": "cdd571f366a4298bb863a9dcfe1295bb595041d5"
+            "branch": "release/6.3",
+            "revision": "79e4b74a295b6eb74a8b585e3a39d29e70c1dbd1"
           },
           "name": "sourceControlCheckout"
         },
         "subpath": "swift-syntax"
       }
-    ]
+    ],
+    "prebuilts": []
   },
-  "version": 6
+  "version": 7
 }

@@ -1,15 +1,10 @@
-Wrap the swift compilers produced during the build.
+Wrap the swift compiler produced during the build
 
-In BOOTSTRAPPING mode the bootstrapping-level compilers are not just built but
-also executed during the build, so they need wrapping too.
-
-diff --git a/tools/driver/CMakeLists.txt b/tools/driver/CMakeLists.txt
-index 1726f14d..5d3e1203 100644
 --- a/tools/driver/CMakeLists.txt
 +++ b/tools/driver/CMakeLists.txt
-@@ -35,6 +35,13 @@ if(BOOTSTRAPPING_MODE MATCHES "BOOTSTRAPPING.*")
- 
-   add_swift_parser_link_libraries(swift-frontend-bootstrapping0)
+@@ -16,6 +16,13 @@ if(${LIBSWIFT_BUILD_MODE} MATCHES "BOOTSTRAPPING.*")
+                           swiftDriverTool
+                           libswiftStub)
  
 +  # Nix: wrap the swift build.
 +  add_custom_command(
@@ -21,9 +16,9 @@ index 1726f14d..5d3e1203 100644
    swift_create_post_build_symlink(swift-frontend-bootstrapping0
      SOURCE "swift-frontend${CMAKE_EXECUTABLE_SUFFIX}"
      DESTINATION "swiftc${CMAKE_EXECUTABLE_SUFFIX}"
-@@ -56,6 +63,13 @@ if(BOOTSTRAPPING_MODE MATCHES "BOOTSTRAPPING.*")
- 
-   add_swift_parser_link_libraries(swift-frontend-bootstrapping1)
+@@ -34,6 +41,13 @@ if(${LIBSWIFT_BUILD_MODE} MATCHES "BOOTSTRAPPING.*")
+                           swiftDriverTool
+                           libswift-bootstrapping1)
  
 +  # Nix: wrap the swift build.
 +  add_custom_command(
@@ -35,9 +30,9 @@ index 1726f14d..5d3e1203 100644
    swift_create_post_build_symlink(swift-frontend-bootstrapping1
      SOURCE "swift-frontend${CMAKE_EXECUTABLE_SUFFIX}"
      DESTINATION "swiftc${CMAKE_EXECUTABLE_SUFFIX}"
-@@ -74,6 +88,13 @@ target_link_libraries(swift-frontend
- 
- add_swift_parser_link_libraries(swift-frontend)
+@@ -50,6 +64,13 @@ target_link_libraries(swift-frontend
+                         swiftDriverTool
+                         libswift)
  
 +# Nix: wrap the swift build.
 +add_custom_command(
