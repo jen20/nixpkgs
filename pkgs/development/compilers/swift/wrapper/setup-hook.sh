@@ -20,7 +20,11 @@ addEnvHooks "$targetOffset" swiftWrapper_addImports
 # setup hook, so delay until we're sure it was run.
 swiftWrapper_postHook () {
     # On Darwin, libc also contains Swift modules.
-    if [[ -e "$NIX_CC/nix-support/orig-libc" ]]; then
+    #
+    # A stdenvNoCC build never runs the cc-wrapper setup hook, so NIX_CC is
+    # simply unset there. Test for it rather than letting `set -u` abort the
+    # build with "NIX_CC: unbound variable".
+    if [[ -n "${NIX_CC-}" && -e "$NIX_CC/nix-support/orig-libc" ]]; then
         swiftWrapper_addImports "$(<$NIX_CC/nix-support/orig-libc)"
     fi
 }
